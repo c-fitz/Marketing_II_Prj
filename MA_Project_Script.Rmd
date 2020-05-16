@@ -1,0 +1,551 @@
+---
+title: "Marketing Project"
+author: "Rocco Lange"
+date: "4/30/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/chris/Desktop/School/Spring/Marketing Analytics/project")
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(lme4)
+library(glmulti)
+```
+
+
+```{r}
+data <- read.csv("churn.csv")
+```
+
+```{r}
+head(data)
+```
+
+```{r}
+data$churn <- with(data, ifelse(churn=='No', 0, 1))
+data$internationalplan <- with(data, ifelse(internationalplan=='no', 0, 1))
+data$voicemailplan <- with(data, ifelse(voicemailplan=='no', 0, 1))
+```
+
+```{r}
+## New Features
+
+data$totalcalls <- data$totaldaycalls + data$totalevecalls + data$totalnightcalls
+data$totalmin <- data$totaldayminutes + data$totaleveminutes + data$totalnightminutes
+data$totalcharges <- data$totaldaycharge + data$totalevecharge + data$totalnightcharge
+
+data$avgduration <- data$totalmin / data$totalcalls
+data$avgcharge <- data$totalcharges / data$totalcalls
+
+data$percintlcalls <- data$totalintlcalls / data$totalcalls
+data$percintlmin <- data$totalintlminutes / data$totalmin
+data$percintlcharges <- data$totalintlcharge / data$totalcharges
+
+data$percdaycalls <- data$totaldaycalls / data$totalcalls
+data$percdaymin <- data$totaldayminutes / data$totalmin
+data$percdaycharges <- data$totaldaycharge / data$totalcharges
+
+data$percevecalls <- data$totalevecalls / data$totalcalls
+data$percevemin <- data$totaleveminutes / data$totalmin
+data$percevecharges <- data$totalevecharge / data$totalcharges
+
+data$percnightcalls <- data$totalnightcalls / data$totalcalls
+data$percnightmin <- data$totalnightminutes / data$totalmin
+data$percnightcharges <- data$totalnightcharge / data$totalcharges
+
+data$group <- with(data, ifelse(internationalplan == 1 & voicemailplan == 1, 1, 
+                                ifelse(internationalplan == 1 & voicemailplan == 0, 2,
+                                ifelse(internationalplan == 0 & voicemailplan == 1, 3, 4))))
+
+data
+
+
+```
+
+```{r}
+numeric.data <- data
+
+data$churn <- as.factor(data$churn)
+data$internationalplan <- as.factor(data$internationalplan)
+data$voicemailplan <- as.factor(data$voicemailplan)
+data$group <- as.factor(data$group)
+```
+
+## Boxplots
+
+```{r}
+cols <- colnames(data)
+cols.to.plot <- cols[-c(1,3,4,36)]
+
+
+for (i in 1:length(cols.to.plot)) {
+  plot <- ggplot(data, mapping = aes(x=churn, y = data[,cols.to.plot[i]])) +
+    geom_boxplot() +
+    ylab(cols.to.plot[i])
+  print(plot)
+}
+
+```
+
+## Densities and Histograms
+
+```{r, message=FALSE, warning=FALSE}
+for (i in 1:length(cols.to.plot)) {
+  col <- data[,cols.to.plot[i]]
+  
+  dens <- ggplot(data, aes(x=col, fill=churn, color=churn)) +
+    geom_density(position="identity", alpha=0.5)+
+    scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    xlab(cols.to.plot[i])
+
+  hist <- ggplot(data, aes(x=col, fill=churn, color=churn)) +
+    geom_histogram(position="identity", alpha=0.5)+
+    scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    xlab(cols.to.plot[i])
+
+  print(dens)
+  print(hist)
+
+}
+```
+
+
+```{r}
+ggplot(data, aes(x=group, fill=churn, color=churn)) +
+    geom_histogram(position="identity", alpha=0.5, stat = "count")+
+    scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    xlab("group")
+```
+
+```{r, message=FALSE, warning=FALSE}
+for (i in 1:length(cols.to.plot)) {
+  col <- data[,cols.to.plot[i]]
+  
+  dens <- ggplot(data, aes(x=col, fill=churn, color=churn)) +
+    geom_density(position="identity", alpha=0.5)+
+    scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    xlab(cols.to.plot[i])+
+    facet_wrap(~group) 
+
+  hist <- ggplot(data, aes(x=col, fill=churn, color=churn)) +
+    geom_histogram(position="identity", alpha=0.5)+
+    scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
+    xlab(cols.to.plot[i])+
+    facet_wrap(~group)
+
+  print(dens)
+  print(hist)
+
+}
+```
+
+```{r}
+ggplot(data = data) +
+  geom_histogram(mapping=aes(x=accountlength, color=churn, fill=churn), binwidth = 25, alpha = 0.5) +
+  facet_wrap(~churn) 
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+cormat <- round(cor(numeric.data),2)
+library(reshape2)
+melted_cormat <- melt(cormat)
+
+# Get lower triangle of the correlation matrix
+get_lower_tri<-function(cormat){
+  cormat[upper.tri(cormat)] <- NA
+  return(cormat)
+}
+# Get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+  cormat[lower.tri(cormat)]<- NA
+  return(cormat)
+}
+
+upper_tri <- get_upper_tri(cormat)
+
+# melted_cormat <- melt(upper_tri, na.rm = TRUE)
+# Heatmap
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+
+cormat <- reorder_cormat(cormat)
+upper_tri <- get_upper_tri(cormat)
+melted_cormat <- melt(upper_tri)
+
+ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "red", high = "blue", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0))+
+ coord_fixed()+
+  geom_text(aes(Var2, Var1, label = value), color = "black", size = 2.5) #+
+# theme(
+#   axis.title.x = element_blank(),
+#   axis.title.y = element_blank(),
+#   panel.grid.major = element_blank(),
+#   panel.border = element_blank(),
+#   panel.background = element_blank(),
+#   axis.ticks = element_blank(),
+#   legend.justification = c(1, 0),
+#   legend.position = c(1.4, 0.6),
+#   legend.direction = "horizontal")+
+#   guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+#                 title.position = "top", title.hjust = 0.5))
+
+```
+
+
+
+
+
+
+## Stratified Split for Test and Train
+
+```{r}
+library(caret)
+set.seed(47)
+
+data_num <- data[,-c(1,3,4,24:36)]
+data_num = scale(data_num)
+data.scaled <- cbind(data[,c(1,3,4,24:36)],data_num)
+
+train.index <- createDataPartition(data.scaled$churn, p = .7, list = FALSE)
+train <- data.scaled[ train.index,]
+test  <- data.scaled[-train.index,]
+```
+
+```{r}
+hist(as.numeric(train$churn))
+```
+
+```{r}
+hist(as.numeric(test$churn))
+```
+
+
+
+
+
+```{r}
+set.seed(47)
+probit.model <- glm(churn~.-totalintlminutes -totalevecalls -totaldaycalls -avgcharge -group 
+                  -totaldaycharge -totalnightcharge -totalcalls -totaleveminutes -totalmin
+                  -percevemin -percnightmin -totalintlcalls -totalnightminutes -accountlength -percnightcharges
+                  -avgduration -percdaycalls -percnightcalls -totalnightcalls -percevecalls -numbervmailmessages,
+                  data = train, family = binomial(link = "probit"))
+summary(probit.model)
+
+pred_probabilities.pm <- predict(probit.model, newdata = test)
+pred_results.pm <- ifelse(pred_probabilities.pm>0.5,1,0)
+
+F1_Score(as.factor(test[,1]), pred_results.pm, positive = NULL)
+```
+
+
+
+```{r}
+set.seed(47)
+glmulti.probit.out <-
+    glmulti(churn ~ .-totalintlminutes -totalevecalls -totaldaycalls -avgcharge -group 
+                  -totaldaycharge -totalnightcharge -totalcalls -totaleveminutes -totalmin
+                  -percevemin -percnightmin -totalintlcalls -totalnightminutes -accountlength -percnightcharges
+                  -avgduration -percdaycalls -percnightcalls -totalnightcalls -percevecalls -numbervmailmessages, 
+            data = train,
+            level = 1,               # No interaction considered
+            method = "h",            # Exhaustive approach
+            crit = "aic",            # AIC as criteria
+            confsetsize = 5,         # Keep 5 best models
+            plotty = F, report = F,  # No plot or interim reports
+            fitfunction = "glm",     # glm function
+            family = binomial(link = "probit"))       # binomial family for logistic regression
+
+## Show 5 best models (Use @ instead of $ for an S4 object)
+glmulti.probit.out@formulas
+```
+
+```{r}
+summary(glmulti.probit.out@objects[[1]])
+
+pred_probabilities.pm <- predict(glmulti.probit.out@objects[[1]], newdata = test)
+pred_results.pm <- ifelse(pred_probabilities.pm>0.5,1,0)
+
+F1_Score(as.factor(test[,1]), pred_results.pm, positive = NULL)
+confusionMatrix(as.factor(pred_results.pm),as.factor(test[,1]))
+
+
+```
+
+```{r}
+best.model <- glmulti.probit.out@objects[[1]]
+best.aic <- aic(best.model)
+link <- NA
+
+list.models <- c("logit", "cloglog", "probit")
+
+for (i in 1:length(list.models)) {
+  model <- glm(churn ~ 1 + internationalplan + voicemailplan + totaldayminutes + 
+    totalevecharge + totalintlcharge + numbercustomerservicecalls + 
+    totalcharges + percintlcalls + percintlmin + percintlcharges + 
+    percdaymin + percdaycharges + percevecharges,
+                  data = train, family = binomial(link = list.models[i]))
+  
+  if(aic(model) < best.aic){
+    best.aic <- aic(model)
+    best.model <- model
+    link <- list.models[i]
+  }
+}
+
+
+summary(best.model)
+print(link)
+
+pred_probabilities.bml <- predict(best.model, newdata = test)
+pred_results.bml <- ifelse(pred_probabilities.bml>0.5,1,0)
+
+F1_Score(as.factor(test[,1]), pred_results.bml, positive = NULL)
+```
+
+```{r}
+confusionMatrix(as.factor(pred_results.bml),as.factor(test[,1]))
+```
+
+
+```{r}
+glmulti.logit.out <-
+    glmulti(churn ~ . -group -totalevecalls -totaldaycalls -totalintlcalls -totalcalls
+                  -totaldaycharge -totalnightcharge -percnightcharges 
+                  -totalnightminutes-totaleveminutes -totalmin -percevemin -percnightmin, 
+            data = train,
+            level = 1,               # No interaction considered
+            method = "h",            # Exhaustive approach
+            crit = "aic",            # AIC as criteria
+            confsetsize = 5,         # Keep 5 best models
+            plotty = F, report = F,  # No plot or interim reports
+            fitfunction = "glm",     # glm function
+            family = binomial(link = "logit"))       # binomial family for logistic regression
+
+## Show 5 best models (Use @ instead of $ for an S4 object)
+glmulti.logit.out@formulas
+```
+
+
+
+
+
+
+
+# Random Effects Models
+
+```{r}
+logit.re.model <- glmer(churn ~ 1 + internationalplan + voicemailplan + totaldayminutes + 
+    totalevecharge + totalintlcharge + numbercustomerservicecalls + 
+    totalcharges + percintlcalls + percintlmin + percintlcharges + 
+    percdaymin + percdaycharges + percevecharges +
+      (totaldayminutes + totalintlcharge + numbercustomerservicecalls + totalcharges + percintlcalls 
+       + percintlmin + percintlcharges + percdaymin | group ), 
+    data = train, family=binomial(link = "logit"))
+
+summary(logit.re.model)
+```
+
+```{r}
+
+library(e1071)
+
+pred_probabilities <- predict(logit.re.model, newdata = test)
+pred_results <- ifelse(pred_probabilities>0.5,1,0)
+
+confusionMatrix(as.factor(pred_results),as.factor(test[,1]))
+
+```
+
+
+
+
+
+```{r}
+logit.re.model.2 <- glmer(churn ~ 1 + totaldayminutes + 
+    totalevecharge + totalintlcharge + numbercustomerservicecalls + 
+    totalcharges + percintlcalls + percintlmin + percintlcharges + 
+    percdaymin + percdaycharges + percevecharges +
+      (totaldayminutes + totalintlcharge + numbercustomerservicecalls + totalcharges + percintlcalls 
+       + percintlmin + percintlcharges + percdaymin | group ),     data = train, family=binomial(link = "logit"))
+
+summary(logit.re.model.2)
+
+```
+
+```{r}
+
+library(e1071)
+
+pred_probabilities <- predict(logit.re.model.2, newdata = test)
+pred_results <- ifelse(pred_probabilities>0.5,1,0)
+
+confusionMatrix(as.factor(pred_results),as.factor(test[,1]))
+
+```
+
+```{r}
+logit.re.model.3 <- glmer(churn ~ 1 + totaldayminutes + 
+    totalevecharge + numbercustomerservicecalls + 
+    totalcharges + percintlcalls + percintlmin + percintlcharges + 
+    percdaymin + percdaycharges + percevecharges +
+      (totalintlcharge + numbercustomerservicecalls + totalcharges + percintlcalls 
+       + percintlmin + percintlcharges + percdaymin | group), 
+    data = train, family=binomial(link = "logit"))
+
+summary(logit.re.model.3)
+#library(e1071)
+
+pred_probabilities <- predict(logit.re.model.3, newdata = test)
+pred_results <- ifelse(pred_probabilities>0.5,1,0)
+
+#confusionMatrix(as.factor(pred_results),as.factor(test[,1]))
+
+# 2*((precision*recall)/(precision+recall))
+#library(MLmetrics)
+F1_Score(as.factor(test[,1]), pred_results, positive = NULL)
+```
+
+
+```{r}
+
+library(e1071)
+
+pred_probabilities <- predict(logit.re.model.3, newdata = test)
+pred_results <- ifelse(pred_probabilities>0.5,1,0)
+
+confusionMatrix(as.factor(pred_results),as.factor(test[,1]))
+
+# 2*((precision*recall)/(precision+recall))
+library(MLmetrics)
+F1_Score(as.factor(test[,1]), pred_results, positive = NULL)
+
+```
+
+
+```{r}
+# LASSO to check included variables.
+library(glmnet)
+
+#keep - 2,3,4,5,6,8,9,12,19, 24,30,31,34 - to match best.model
+
+# internationalplan1 2 x 2
+# voicemailplan1     3 x 3
+# totaldayminutes    19 21
+# totalevecharge     24 26
+# totalintlcharge    30 32
+# numbercustomerservicecalls    31 33
+# totalcharges       34 36
+# percintlcalls      4 x 4
+# percintlmin        5 x 5
+# percintlcharges    6 x 6
+# percdaymin         8 x 8
+# percdaycharges     9 x 9
+# percevecharges     12  12
+
+# ?Accountlength, totaleveminutes, totalintminutes,totalintlcalls,totalcalls
+
+# x <- model.matrix(churn~., train)[,-1]
+x <- model.matrix(churn~., train)[,c(2:6,8,9,12,21,26,32,33,36)]
+x.te <- model.matrix(churn~., test)[,c(2:6,8,9,12,21,26,32,33,36)]
+# Convert the outcome (class) to a numerical variable
+y <- train$churn
+y.te <- test$churn
+
+#grid <- 10 ^ seq(4, -2, length = 100)
+lasso <- cv.glmnet(x, y, alpha = 1, family = "binomial")
+
+lassoLambdaMin <- lasso$lambda.min
+predict(lasso, s = lassoLambdaMin, type = "coefficients")
+
+#names(train)
+
+
+```
+
+
+```{r}
+library(e1071)
+
+pred_probabilitiesLASSO <- predict(lasso, s = lassoLambdaMin, type = "response", 
+                                   newx = x.te)
+pred_resultsLASSO <- ifelse(pred_probabilitiesLASSO>0.32,1,0)
+
+confusionMatrix(as.factor(pred_resultsLASSO),as.factor(y.te))
+
+
+```
+
+
+```{r}
+library(e1071)
+confusionMatrix(as.factor(pred_resultsLASSO),as.factor(y.te))
+```
+
+```{r}
+library(ROCit)
+
+# # Probit
+# glmulti.probit.out@objects[[1]]
+# pred_probabilities.pm
+# 
+# # logit
+# best.model
+# pred_probabilities.bml
+# 
+# # RE
+# logit.re.model.3
+# pred_probabilities
+
+#ROC probit
+predslog<- predict(glmulti.probit.out@objects[[1]], newdata=test, type='response')
+ROCit_obj <- rocit(score=predslog,class=test$churn)
+plot(ROCit_obj,col = c("#2F4F4F", "#BEBEBE"))
+#with CI
+cip = ciROC(ROCit_obj,col = c(2,4))
+plot(cip)
+
+# logit
+predsprob<- predict(best.model, newdata=test, type='response')
+ROCit_obj2 <- rocit(score=predsprob,class=test$churn)
+plot(ROCit_obj2, c("#2F4F4F", "#BEBEBE"))
+#with CI
+cip = ciROC(ROCit_obj2,col = c(2,4))
+plot(cip)
+
+# ME
+predsprob<- predict(logit.re.model.3, newdata=test, type='response')
+ROCit_obj2 <- rocit(score=predsprob,class=test$churn)
+plot(ROCit_obj2, c("#2F4F4F", "#BEBEBE"))
+#with CI
+cip = ciROC(ROCit_obj2,col = c(2,4))
+plot(cip)
+
+```
+
+
+
+
+
+
